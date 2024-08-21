@@ -30,9 +30,11 @@ module App = {
   [@react.component]
   let make = () => {
     let (data, setData) = React.useState(() => Loading);
-    React.useEffect0(() => {
+    let (username, setUsername) = React.useState(() => "jchavarri");
+
+    let fetchFeed = username => {
       Js.Promise.(
-        Fetch.fetch("https://gh-feed.vercel.app/api?user=jchavarri&page=1")
+        Fetch.fetch("https://gh-feed.vercel.app/api?page=1&user=" ++ username)
         |> then_(Fetch.Response.text)
         |> then_(text =>
              {
@@ -48,31 +50,55 @@ module App = {
            )
       )
       |> ignore;
+    };
+
+    React.useEffect0(() => {
+      fetchFeed(username);
       None;
     });
 
-    switch (data) {
-    | Loading => <div> {React.string("Loading...")} </div>
-    | Loaded(Error(msg)) => <div> {React.string(msg)} </div>
-    | Loaded(Ok(feed)) =>
+    <>
       <div>
-        <h1> {React.string("GitHub Feed")} </h1>
-        <ul>
-          {feed.entries
-           |> Array.map((entry: Feed.entry) =>
-                <li key={entry.id}>
-                  <h2> {React.string(entry.title)} </h2>
-                  {switch (entry.content) {
-                   | None => React.null
-                   | Some(content) =>
-                     <div dangerouslySetInnerHTML={"__html": content} />
-                   }}
-                </li>
-              )
-           |> React.array}
-        </ul>
+        <label htmlFor="username-input"> {React.string("Username:")} </label>
+        <input
+          id="username-input"
+          value=username
+          onChange={event => {
+            setUsername(event->React.Event.Form.target##value)
+          }}
+          onKeyDown={event => {
+            let enterKey = 13;
+            if (React.Event.Keyboard.keyCode(event) == enterKey) {
+              setData(_ => Loading);
+              fetchFeed(username);
+            };
+          }}
+          placeholder="Enter GitHub username"
+        />
       </div>
-    };
+      {switch (data) {
+       | Loading => <div> {React.string("Loading...")} </div>
+       | Loaded(Error(msg)) => <div> {React.string(msg)} </div>
+       | Loaded(Ok(feed)) =>
+         <div>
+           <h1> {React.string("GitHub Feed")} </h1>
+           <ul>
+             {feed.entries
+              |> Array.map((entry: Feed.entry) =>
+                   <li key={entry.id}>
+                     <h2> {React.string(entry.title)} </h2>
+                     {switch (entry.content) {
+                      | None => React.null
+                      | Some(content) =>
+                        <div dangerouslySetInnerHTML={"__html": content} />
+                      }}
+                   </li>
+                 )
+              |> React.array}
+           </ul>
+         </div>
+       }}
+    </>;
   };
 };
 
