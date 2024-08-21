@@ -21,31 +21,58 @@
  * common to name the main function of a component `make` instead of the
  * component's name.
  */
+
+type loadingStatus =
+  | Loading
+  | Loaded(result(Feed.feed, string));
+
 module App = {
   [@react.component]
   let make = () => {
-    <>
-      <div />
+    let (data, setData) = React.useState(() => Loading);
+    React.useEffect0(() => {
+      Js.Promise.(
+        Fetch.fetch("https://gh-feed.vercel.app/api?user=jchavarri&page=1")
+        |> then_(Fetch.Response.text)
+        |> then_(text =>
+             {
+               let data =
+                 try(Ok(text |> Json.parseOrRaise |> Feed.feed_of_json)) {
+                 | Json.Decode.DecodeError(msg) =>
+                   Js.Console.error(msg);
+                   Error("Failed to decode: " ++ msg);
+                 };
+               setData(_ => Loaded(data));
+             }
+             |> resolve
+           )
+      )
+      |> ignore;
+      None;
+    });
+
+    switch (data) {
+    | Loading => <div> {React.string("Loading...")} </div>
+    | Loaded(Error(msg)) => <div> {React.string(msg)} </div>
+    | Loaded(Ok(feed)) =>
       <div>
-        <h1>
-          {/*
-            * `React.string` is used in ReasonReact to convert plain strings into
-            * React text elements. This is necessary because in OCaml, you
-            * can't directly render strings in JSX. It's similar to how text
-            * content is treated in JSX/TSX in the JavaScript/TypeScript world,
-            * but with explicit conversion for better type safety and clarity in
-            * the OCaml ecosystem.
-            */
-           React.string(
-             "Hello Alicante!",
-           )}
-        </h1>
-        <h2>
-          {React.string("Write maintainable React applications using OCaml")}
-        </h2>
-        <img src=camelFun />
+        <h1> {React.string("GitHub Feed")} </h1>
+        <ul>
+          {feed.entries
+           |> Array.map((entry: Feed.entry) =>
+                <li key={entry.id}>
+                  <h2> {React.string(entry.title)} </h2>
+                  {switch (entry.content) {
+                   | None => React.null
+                   | Some(content) =>
+                     <div dangerouslySetInnerHTML={"__html": content} />
+                   }}
+                </li>
+              )
+           |> React.array}
+        </ul>
       </div>
-    </>;
+    };
   };
 };
 
