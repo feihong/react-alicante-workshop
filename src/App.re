@@ -22,38 +22,81 @@
  * component's name.
  */
 
-type loadingStatus =
-  | Loading
-  | Loaded(result(Feed.feed, string));
+// type loadingStatus =
+//   | Loading
+//   | Loaded(result(Feed.feed, string));
 
 module App = {
+  module P = Js.Promise;
+
+  type step =
+    | Idle /* There is no request going on, and no data to be shown. In this case, we will just show instructions to proceed with the request. */
+    | Loading /* A request is currently taking place to fetch the feed. */
+    | InvalidUsername /* The entered username is not a valid GitHub ID. */
+    | Loaded(result(Feed.feed, string)); /* A request has finished, its result is contained inside the variant value itself. */
+
+  type state = {
+    username: string,
+    step,
+  };
+
   [@react.component]
   let make = () => {
-    let (data, setData) = React.useState(() => Loading);
-    let (username, setUsername) = React.useState(() => "jchavarri");
+    // let (data, setData) = React.useState(() => Loading);
+    // let (username, setUsername) = React.useState(() => "jchavarri");
+    let (state, setState) =
+      React.useState(() => {username: "jchavarri", step: Idle});
 
     let fetchFeed = username => {
-      Js.Promise.(
-        Fetch.fetch("https://gh-feed.vercel.app/api?page=1&user=" ++ username)
-        |> then_(Fetch.Response.text)
-        |> then_(text =>
-             {
-               let data =
-                 try(Ok(text |> Json.parseOrRaise |> Feed.feed_of_json)) {
-                 | Json.Decode.DecodeError(msg) =>
-                   Js.Console.error(msg);
-                   Error("Failed to decode: " ++ msg);
-                 };
-               setData(_ => Loaded(data));
-             }
-             |> resolve
-           )
+      setState(state => {...state, step: Loading});
+
+      Fetch.fetch(
+        "https://gh-feed.vercel.app/api?page=1&user="
+        ++ Username.toString(username),
       )
+      |> P.then_(response => {
+           let status = Fetch.Response.status(response);
+           switch (status) {
+           | 200 =>
+             Fetch.Response.text(response)
+             |> P.then_(text => {
+                  let data =
+                    try(Ok(text |> Json.parseOrRaise |> Feed.feed_of_json)) {
+                    | Json.Decode.DecodeError(msg) =>
+                      Js.Console.error(msg);
+                      Error("Failed to decode: " ++ msg);
+                    };
+                  setState(state => {...state, step: Loaded(data)});
+                  P.resolve();
+                })
+             |> ignore
+           | status =>
+             /* Handle non-200 status */
+             setState(state =>
+               {
+                 ...state,
+                 step:
+                   Loaded(
+                     Error(
+                       "Error: Received status " ++ string_of_int(status),
+                     ),
+                   ),
+               }
+             )
+           };
+           P.resolve();
+         })
       |> ignore;
     };
 
     React.useEffect0(() => {
-      fetchFeed(username);
+      switch (Username.make(state.username)) {
+      | Ok(username) => fetchFeed(username)
+      | Error () =>
+        Js.Exn.raiseError(
+          "Initial username passed to React.useState is invalid",
+        )
+      };
       None;
     });
 
@@ -62,39 +105,55 @@ module App = {
         <label htmlFor="username-input"> {React.string("Username:")} </label>
         <input
           id="username-input"
-          value=username
+          value={state.username}
           onChange={event => {
-            setUsername(event->React.Event.Form.target##value)
+            setState(_ =>
+              {username: event->React.Event.Form.target##value, step: Idle}
+            )
           }}
           onKeyDown={event => {
             let enterKey = 13;
             if (React.Event.Keyboard.keyCode(event) == enterKey) {
-              setData(_ => Loading);
-              fetchFeed(username);
+              switch (Username.make(state.username)) {
+              | Ok(username) => fetchFeed(username)
+              | Error () =>
+                setState(state => {...state, step: InvalidUsername})
+              };
             };
           }}
           placeholder="Enter GitHub username"
         />
       </div>
-      {switch (data) {
+      {switch (state.step) {
+       | InvalidUsername => <div> {React.string("Invalid username")} </div>
+       | Idle =>
+         <div>
+           {React.string(
+              "Press the \"Enter\" key to confirm the username selection.",
+            )}
+         </div>
        | Loading => <div> {React.string("Loading...")} </div>
        | Loaded(Error(msg)) => <div> {React.string(msg)} </div>
        | Loaded(Ok(feed)) =>
          <div>
            <h1> {React.string("GitHub Feed")} </h1>
            <ul>
-             {feed.entries
-              |> Array.map((entry: Feed.entry) =>
-                   <li key={entry.id}>
-                     <h2> {React.string(entry.title)} </h2>
-                     {switch (entry.content) {
-                      | None => React.null
-                      | Some(content) =>
-                        <div dangerouslySetInnerHTML={"__html": content} />
-                      }}
-                   </li>
-                 )
-              |> React.array}
+             {switch (feed.entries) {
+              | [||] => React.string("This user feed is empty")
+              | entries =>
+                entries
+                |> Array.map((entry: Feed.entry) =>
+                     <li key={entry.id}>
+                       <h2> {React.string(entry.title)} </h2>
+                       {switch (entry.content) {
+                        | None => React.null
+                        | Some(content) =>
+                          <div dangerouslySetInnerHTML={"__html": content} />
+                        }}
+                     </li>
+                   )
+                |> React.array
+              }}
            </ul>
          </div>
        }}
