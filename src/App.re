@@ -103,25 +103,15 @@ module App = {
     <>
       <div>
         <label htmlFor="username-input"> {React.string("Username:")} </label>
-        <input
-          id="username-input"
-          value={state.username}
-          onChange={event => {
-            setState(_ =>
-              {username: event->React.Event.Form.target##value, step: Idle}
-            )
-          }}
-          onKeyDown={event => {
-            let enterKey = 13;
-            if (React.Event.Keyboard.keyCode(event) == enterKey) {
-              switch (Username.make(state.username)) {
-              | Ok(username) => fetchFeed(username)
-              | Error () =>
-                setState(state => {...state, step: InvalidUsername})
-              };
-            };
-          }}
-          placeholder="Enter GitHub username"
+        <UsernameInput
+          username={state.username}
+          onChange={username => setState(_ => {username, step: Idle})}
+          onEnterKeyDown={() =>
+            switch (Username.make(state.username)) {
+            | Ok(username) => fetchFeed(username)
+            | Error () => setState(state => {...state, step: InvalidUsername})
+            }
+          }
         />
       </div>
       {switch (state.step) {
